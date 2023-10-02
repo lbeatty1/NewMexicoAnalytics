@@ -8,6 +8,9 @@ setwd(datadirectory)
 library(tidyverse)
 library(lubridate)
 library(data.table)
+library(ggplot2)
+library(scales)
+
 
 #Wellhistory is from a csv conversion from the FTP server
 wellhistory=fread("OCD_Converted/wellhistory.csv", colClasses = "character")
@@ -116,6 +119,7 @@ View(panel%>%filter(API==3000500233))  #clearly not active lol
 
 #Also look making the panel makes the status changes right as I mentioned on slack
 #Now these should be a good interpretation
+panel = data.table(panel)
 panel[order(API,date),lagstatus:=shift(status, n=1, type="lag")]
 panel[,transition:=paste(lagstatus, status, sep="-->")]
 
@@ -147,4 +151,182 @@ panel[,time_shutin:=time_shutin*(1-producing_flag)]
 View(panel%>%arrange(API, date)%>%select(API,date, Oil, Gas, BOE, status, producing_flag, time_producing, time_shutin))
 View(panel[API=="3001521672"])  #This guy produced like $4 worth of Gas over two years and seemingly kepth their "A" status
 
-     
+
+########################################################################
+## Run Similar analysis to Utah - Calc yearly production for each well##
+#########################################################################
+year = panel%>%
+  filter(date<=as.Date("2022-12-01"),
+         date>=as.Date("2022-01-01"))%>%
+  group_by(API)%>%
+  summarise(BOE = sum(BOE,na.rm=T),
+            Gas = sum(Gas, na.rm=T),
+            Oil = sum(Oil, na.rm=T))
+year_details = panel%>%
+  filter(date<=as.Date("2022-12-01"),
+         date>=as.Date("2021-01-01"))%>%
+  group_by(API)%>%
+  slice_max(n=1, order_by=date)%>%
+  select(API, eff_dte, rec_termn_dte, ogrid_cde, well_typ_cde, lease_typ_cde, latitude, longitude, status, spud_dte, plug_dte, dpth_tgt_num, dpth_tvd_num, dpth_mvd_num)
+
+year = left_join(year, year_details, by="API")
+
+###############################
+####### see what we're missing#
+###############################
+# missings = panel%>%filter(!API%in%unique(year$API))
+# View(missings%>%arrange(API, date))
+# ####mostly looks like plugged wells but some dissapear and don't have a plugging record
+# View(panel%>%filter(API==3001524212))
+# View(panel%>%filter(API==3001543968))
+# View(panel%>%filter(API==3004535916))
+# ######find extent of the problem
+# nrow(missings%>%filter(is.na(plug_dte))%>%select(API)%>%unique())
+# ######not a huge deal but substantial
+# nrow(unique(missings%>%select(API)))
+# nrow(panel%>%select(API)%>%unique())
+
+
+
+#####################
+## Filter to only fee/state wells, impute depths
+#treat J as shut-in????
+year = year%>%
+  filter(lease_typ_cde%in%c("P", "S"),
+         !status %in% c("P", "N"))%>%
+  mutate(dpth_tvd_num = replace(dpth_tvd_num, dpth_tvd_num=="99999", NA),
+         dpth_tvd_num = replace(dpth_tvd_num, dpth_tvd_num=="0", NA),
+         dpth_mvd_num = replace(dpth_mvd_num, dpth_mvd_num=="99999", NA),
+         dpth_mvd_num = replace(dpth_mvd_num, dpth_mvd_num=="99999", NA),
+         dpth_tvd_num = as.numeric(dpth_tgt_num),
+         dpth_mvd_num = as.numeric(dpth_mvd_num),
+         depth = coalesce(dpth_mvd_num,dpth_tvd_num),
+         status = replace(status, status=="J", "S"))                   ### I really don't know what J is but in the panel it looks like the vast majority of these wells are not producing
+meandepth = mean(year$depth, na.rm=T)
+year = year%>%
+  mutate(depth = replace(depth, depth==0, meandepth),
+         individual_bond = 25000 + 2*depth,
+         temp_abandoned_flag = status%in%c("T", "E"),
+         plug_cost = depth*12)
+
+
+
+
+################################
+## Calculate Plug costs, collapse by operator
+operator_summary = year%>%
+  group_by(ogrid_cde, temp_abandoned_flag)%>%
+  summarise(n_wells = n(),
+            plug_cost = sum(plug_cost,na.rm=T),
+            sum_individual_bonds = sum(individual_bond,na.rm=T))
+operator_summary = pivot_wider(operator_summary, id_cols="ogrid_cde", values_from = c("n_wells", "plug_cost", "sum_individual_bonds"), names_from="temp_abandoned_flag", values_fill = 0)  
+
+operator_summary = operator_summary%>%
+  mutate(active_bond = 0,
+         active_bond = replace(active_bond, n_wells_FALSE>0&n_wells_FALSE<=10, 50000),
+         active_bond = replace(active_bond, n_wells_FALSE>10&n_wells_FALSE<=50, 75000),
+         active_bond = replace(active_bond, n_wells_FALSE>50&n_wells_FALSE<=100, 125000),
+         active_bond = replace(active_bond, n_wells_FALSE>100, 250000),
+         temp_abandon_bond = 0,
+         temp_abandon_bond = replace(temp_abandon_bond, n_wells_TRUE>0&n_wells_TRUE<=5, 150000),
+         temp_abandon_bond = replace(temp_abandon_bond, n_wells_TRUE>5&n_wells_TRUE<=10, 300000),
+         temp_abandon_bond = replace(temp_abandon_bond, n_wells_TRUE>10&n_wells_TRUE<=25, 500000),
+         temp_abandon_bond = replace(temp_abandon_bond, n_wells_TRUE>25, 1000000),
+         bond = pmin(active_bond, sum_individual_bonds_FALSE)+pmin(temp_abandon_bond, sum_individual_bonds_TRUE),
+         hypothetical_perfoot_bond = sum_individual_bonds_FALSE+sum_individual_bonds_TRUE,
+         total_plugcost = plug_cost_FALSE+plug_cost_TRUE,
+         uses_active_blanket = pmin(active_bond, sum_individual_bonds_FALSE)==active_bond,
+         uses_tempabandon_blanket = pmin(temp_abandon_bond, sum_individual_bonds_TRUE)==temp_abandon_bond,
+         n_temp_abandon_group = "zero",
+         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>0&n_wells_TRUE<=5, "between 1 and 5"),
+         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>5&n_wells_TRUE<=10, "between 6 and 10"),
+         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>10&n_wells_TRUE<=25, "between 11 and 25"),
+         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>25, "more than 25"))
+
+################
+## triple blanket amounts for active, double for inactive
+##############
+
+operator_summary = operator_summary%>%
+  mutate(active_triple = active_bond*3,
+         temp_abandon_bond_double = temp_abandon_bond*2,
+         bond_2 = pmin(active_triple, sum_individual_bonds_FALSE)+pmin(temp_abandon_bond_double, sum_individual_bonds_TRUE))
+
+####
+#
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=hypothetical_perfoot_bond, y=bond, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ggtitle("Blanket bonds are many magnitudes lower than  individual well bonds")+
+  theme_bw()
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=hypothetical_perfoot_bond, y=total_plugcost, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Even individual per-foot bonds are likely too low")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Estimated Plug Costs for Fee/State Wells")+
+  xlab("Hypothetical Individual Well Bond Amounts")+
+  theme_bw()
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond, y=total_plugcost, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Bonds are like crazy totally insufficient")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Wells")+
+  xlab("Current Bond Amounts")+
+  theme_bw()
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond, y=total_plugcost, color=factor(uses_tempabandon_blanket)))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Bonds are like crazy totally insufficient")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Wells")+
+  xlab("Current Bond Amounts")+
+  theme_bw()
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond_2, y=total_plugcost, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Bonds are still insufficient with triple/double scheme")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Wells")+
+  xlab("New Bond Amounts")+
+  theme_bw()
+
+#############################
+## Costs for low production wells
+lowprod_plugcosts = year%>%
+  filter(BOE<365*2)%>%
+  group_by(ogrid_cde)%>%
+  summarise(plug_cost_lowprod = sum(plug_cost,na.rm=T))
+
+operator_summary = left_join(operator_summary, lowprod_plugcosts, by="ogrid_cde")
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond_2, y=plug_cost_lowprod, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Triple/double scheme doesn't look like enough to cover \n even only fee/state wells that produce  <2BOE per day.")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
+  xlab("New Bond Amounts")+
+  theme_bw()
+
+ggplot(data=operator_summary%>%filter(bond_2<1000000))+
+  geom_point(aes(x=bond_2, y=plug_cost_lowprod, color=n_temp_abandon_group))+
+  geom_abline(slope=1, intercept=0)+
+  ggtitle("Triple/double scheme doesn't look like enough to cover \n even only fee/state wells that produce  <2BOE per day.")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
+  xlab("New Bond Amounts")+
+  theme_bw()
