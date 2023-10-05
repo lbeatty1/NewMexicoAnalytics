@@ -71,9 +71,11 @@ wellhistory[,spud_dte:=as.Date(spud_dte, "%m/%d/%Y")]
 wellhistory[,plug_dte:=as.Date(plug_dte, "%m/%d/%Y")]
 
 #filter out some more
+nrow(wellhistory)
 wellhistory = wellhistory[plug_dte>="2018-01-01",]
 wellhistory = wellhistory[!status%in%c("C", "Z", "Q", "X"),]
-
+wellhistory = wellhistory[well_typ_cde%in%c("G", "O")]
+nrow(wellhistory)
 
 #fill in missing spud and plug dates
 wellhistory[,spud_dte:=min(spud_dte,na.rm=T), by=API]
@@ -108,7 +110,7 @@ nrow(panel)
 
 #lets throw out some stuff
 panel = panel[,c(1,2,6,7,8,9,13,14,19,20,32,33,34,38,39,40,41,43,44)]
-rm(production, wellhistory, tempdata, gasprod, oilprod)
+rm(production, tempdata, gasprod, oilprod)
 gc()
 
 #Notes for Aaron:
@@ -241,7 +243,12 @@ operator_summary = operator_summary%>%
          n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>0&n_wells_TRUE<=5, "between 1 and 5"),
          n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>5&n_wells_TRUE<=10, "between 6 and 10"),
          n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>10&n_wells_TRUE<=25, "between 11 and 25"),
-         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>25, "more than 25"))
+         n_temp_abandon_group = replace(n_temp_abandon_group, n_wells_TRUE>25, "more than 25"),
+         active_bond_group = "zero",
+         active_bond_group = replace(active_bond_group, n_wells_FALSE>0&n_wells_FALSE<=10, "between 1 and 10"),
+         active_bond_group = replace(active_bond_group, n_wells_FALSE>10&n_wells_FALSE<=50, "between 11 and 50"),
+         active_bond_group = replace(active_bond_group, n_wells_FALSE>50&n_wells_FALSE<=100, "between 51 and 100"),
+         active_bond_group = replace(active_bond_group, n_wells_FALSE>100, "more than 100"))
 
 ################
 ## triple blanket amounts for active, double for inactive
@@ -260,38 +267,47 @@ ggplot(data=operator_summary)+
   geom_abline(slope=1, intercept=0)+
   scale_x_continuous(label=dollar)+
   scale_y_continuous(label=dollar)+
+  labs(caption="Plot of firm-level hypothetical single-well bonds versus actual bonds. \n A line is plotted at y=x.")+
   ggtitle("Blanket bonds are many magnitudes lower than  individual well bonds")+
   theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/PerFoot_v_Actual.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
 
 ggplot(data=operator_summary)+
   geom_point(aes(x=hypothetical_perfoot_bond, y=total_plugcost, color=n_temp_abandon_group))+
   geom_abline(slope=1, intercept=0)+
-  ggtitle("Even individual per-foot bonds are likely too low")+
+  ggtitle("Single-well bonds are lower than estimated plugging costs.")+
   scale_x_continuous(label=dollar)+
   scale_y_continuous(label=dollar)+
-  ylab("Estimated Plug Costs for Fee/State Wells")+
+  ylab("Estimated Plug Costs for Fee/State Wells by Firm")+
   xlab("Hypothetical Individual Well Bond Amounts")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities against required hypothetical bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/PerFoot_v_Costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
 
 ggplot(data=operator_summary)+
   geom_point(aes(x=bond, y=total_plugcost, color=n_temp_abandon_group))+
   geom_abline(slope=1, intercept=0)+
-  ggtitle("Bonds are like crazy totally insufficient")+
+  ggtitle("Business as usual bonds are far lower than plugging liabilities")+
   scale_x_continuous(label=dollar)+
   scale_y_continuous(label=dollar)+
   ylab("Total Plugging Liabilities for Fee/State Wells")+
   xlab("Current Bond Amounts")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
 
-ggplot(data=operator_summary)+
-  geom_point(aes(x=bond, y=total_plugcost, color=factor(uses_tempabandon_blanket)))+
-  geom_abline(slope=1, intercept=0)+
-  ggtitle("Bonds are like crazy totally insufficient")+
-  scale_x_continuous(label=dollar)+
-  scale_y_continuous(label=dollar)+
-  ylab("Total Plugging Liabilities for Fee/State Wells")+
-  xlab("Current Bond Amounts")+
-  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/CurrentBond_v_Costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
 
 ggplot(data=operator_summary)+
   geom_point(aes(x=bond_2, y=total_plugcost, color=n_temp_abandon_group))+
@@ -300,9 +316,15 @@ ggplot(data=operator_summary)+
   scale_x_continuous(label=dollar)+
   scale_y_continuous(label=dollar)+
   ylab("Total Plugging Liabilities for Fee/State Wells")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds \n assuming active blankets triple and TA blankets double. A line is plotted at y=x. \n Plugging costs assume each well costs $12 per foot to plug.")+
   xlab("New Bond Amounts")+
   theme_bw()
 
+
+ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_Costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
 #############################
 ## Costs for low production wells
 lowprod_plugcosts = year%>%
@@ -318,15 +340,124 @@ ggplot(data=operator_summary)+
   scale_x_continuous(label=dollar)+
   scale_y_continuous(label=dollar)+
   ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities for marginal wells against required bonds \n assuming active blankets triple and TA blankets double. A line is plotted at y=x. \n Plugging costs assume each well costs $12 per foot to plug.")+
   xlab("New Bond Amounts")+
   theme_bw()
 
-ggplot(data=operator_summary%>%filter(bond_2<1000000))+
-  geom_point(aes(x=bond_2, y=plug_cost_lowprod, color=n_temp_abandon_group))+
-  geom_abline(slope=1, intercept=0)+
-  ggtitle("Triple/double scheme doesn't look like enough to cover \n even only fee/state wells that produce  <2BOE per day.")+
+ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_MarginalCosts.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+
+##################
+## Histogramms ###
+##################
+
+ggplot(data=operator_summary%>%filter(n_temp_abandon_group=="between 1 and 5"))+
+  geom_histogram(aes(x=sum_individual_bonds_TRUE))+
+  geom_vline(xintercept = 150000)+
   scale_x_continuous(label=dollar)+
-  scale_y_continuous(label=dollar)+
-  ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
-  xlab("New Bond Amounts")+
+  xlab("Sum of hypothetical individual well bonds for TA wells")+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate between 1 and 5 TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
   theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_TA_1_5.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(n_temp_abandon_group=="between 6 and 10"))+
+  geom_histogram(aes(x=sum_individual_bonds_TRUE))+
+  scale_x_continuous(label=dollar)+
+  xlab("Sum of hypothetical individual well bonds for TA wells")+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate between 6 and 10 TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  geom_vline(xintercept = 300000)+
+  theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/Histogram_TA_6_10.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(n_temp_abandon_group=="between 11 and 25"))+
+  geom_histogram(aes(x=sum_individual_bonds_TRUE))+
+  scale_x_continuous(label=dollar)+
+  xlab("Sum of hypothetical individual well bonds for TA wells")+
+  geom_vline(xintercept = 500000)+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate between 11 and 25 TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_TA_11_25.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(n_temp_abandon_group=="more than 25"))+
+  geom_histogram(aes(x=sum_individual_bonds_TRUE))+
+  scale_x_continuous(label=dollar)+
+  xlab("Sum of hypothetical individual well bonds for TA wells")+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate more than TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  geom_vline(xintercept = 1000000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_TA_25.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+### Active
+
+ggplot(data=operator_summary%>%filter(active_bond_group=="between 1 and 10"))+
+  geom_histogram(aes(x=sum_individual_bonds_FALSE))+
+  geom_vline(xintercept = 50000)+
+  xlab("Sum of hypothetical individual well bonds for non-TA wells")+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for non-TA wells")+
+  labs(caption="For firms that operate between 1 and 10 active state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_1_10.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(active_bond_group=="between 11 and 50"))+
+  geom_histogram(aes(x=sum_individual_bonds_FALSE))+
+  xlab("Sum of hypothetical individual well bonds for non-TA wells")+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for non-TA wells")+
+  labs(caption="For firms that operate between 11 and 50 non-TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  geom_vline(xintercept = 75000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_11_50.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(active_bond_group=="between 51 and 100"))+
+  geom_histogram(aes(x=sum_individual_bonds_FALSE))+
+  xlab("Sum of hypothetical individual well bonds for non-TA wells")+
+  geom_vline(xintercept = 125000)+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate between 11 and 25 TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_51_100.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary%>%filter(active_bond_group=="more than 100"))+
+  geom_histogram(aes(x=sum_individual_bonds_FALSE))+
+  xlab("Sum of hypothetical individual well bonds for non-TA wells")+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram of hypothetical individual well bonds \n owed for TA wells")+
+  labs(caption="For firms that operate more than TA state/fee wells. \n Vertical black line drawn at the blanket amount.")+
+  geom_vline(xintercept = 250000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_100.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
