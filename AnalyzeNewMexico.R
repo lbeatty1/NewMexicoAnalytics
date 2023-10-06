@@ -29,6 +29,7 @@ for(j in prodfiles){
 
 oilprod = pivot_longer(production, cols=starts_with("Oil"), names_prefix="Oil")
 gasprod = pivot_longer(production, cols=starts_with("Gas"), names_prefix="Gas")
+waterprod = pivot_longer(production, cols=starts_with("Water"), names_prefix="Water")
 
 gasprod = gasprod%>%
   mutate(value=as.numeric(value))%>%
@@ -39,6 +40,11 @@ oilprod = oilprod%>%
   mutate(value=as.numeric(value))%>%
   group_by(API, Year, name)%>%
   summarise(Oil=sum(value))
+
+waterprod = waterprod%>%
+  mutate(value=as.numeric(value))%>%
+  group_by(API, Year, name)%>%
+  summarise(water=sum(value))
 
 production = left_join(oilprod, gasprod, by=c("API", "Year", "name"))
 production = production%>%
@@ -460,4 +466,6 @@ ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_100.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
+
+write.csv(panel, "DataOutput/panel.csv")
 
