@@ -331,7 +331,7 @@ ggplot(data=operator_stats%>%filter(bond<25000000))+
   labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
 
-ggsave(filename=paste(codedirectory,"UtahReg/Figures/BondLiability.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/UtahReg/BondLiability.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -347,7 +347,7 @@ ggplot(data=operator_stats%>%filter(bond<5000000, liability4<100000000))+
   labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
 
-ggsave(filename=paste(codedirectory,"UtahReg/Figures/BondLiability_zoom.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/UtahReg/BondLiability_zoom.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -376,7 +376,7 @@ ggplot(data=operator_stats%>%filter(bond<10000000))+
   xlab("Required Bonds")+
   labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12/foot to plug.")+
   theme_bw()
-ggsave(filename=paste(codedirectory,"UtahReg/Figures/BondLiability_InactiveMarginal.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/UtahReg/BondLiability_InactiveMarginal.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -404,7 +404,7 @@ ggplot(data=operator_stats%>%filter(bond<10000000))+
   labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
 
-ggsave(filename=paste(codedirectory,"UtahReg/Figures/BondLiability_FeeState.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/UtahReg/BondLiability_FeeState.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -435,7 +435,7 @@ ggplot(data=operator_stats%>%filter(bond<10000000))+
   xlab("Required Bonds")+
   labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
   theme_bw()
-ggsave(filename=paste(codedirectory,"UtahReg/Figures/BondLiability_MarginalInactiveFeeState.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/UtahReg/BondLiability_MarginalInactiveFeeState.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
