@@ -7,4 +7,7 @@ AnalyzeNewMexico.R takes publically available data on well statuses and well pro
 
 AnalyzeUtahProposedReg.R takes New Mexico data and calculated hypothetical bond amounts under the new Utah proposed regulation.  It calls some simple helper functions in Utah_bond_funs.R
 
+## Data Access
+These scripts use two datasources.  The first is the wellhistory data accessable from EMNRD OCD's FTP server.  I converted this xml file to a csv before working with it.  I accessed production data from GO-TECH, available at http://octane.nmt.edu/gotech/Petroleum_Data/county.aspx
+
 
