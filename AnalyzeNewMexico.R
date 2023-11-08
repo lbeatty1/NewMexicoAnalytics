@@ -160,6 +160,8 @@ View(panel%>%arrange(API, date)%>%select(API,date, Oil, Gas, BOE, status, produc
 View(panel[API=="3001521672"])  #This guy produced like $4 worth of Gas over two years and seemingly kepth their "A" status
 
 
+panel[,inactive_flag:=time_shutin>=15]
+
 ########################################################################
 ## Run Similar analysis to Utah - Calc yearly production for each well##
 #########################################################################
@@ -175,7 +177,7 @@ year_details = panel%>%
          date>=as.Date("2021-01-01"))%>%
   group_by(API)%>%
   slice_max(n=1, order_by=date)%>%
-  select(API, eff_dte, rec_termn_dte, ogrid_cde, well_typ_cde, lease_typ_cde, latitude, longitude, status, spud_dte, plug_dte, dpth_tgt_num, dpth_tvd_num, dpth_mvd_num)
+  select(API, eff_dte, rec_termn_dte, ogrid_cde, well_typ_cde, lease_typ_cde, latitude, longitude, status, spud_dte, plug_dte, dpth_tgt_num, dpth_tvd_num, dpth_mvd_num, inactive_flag, time_shutin)
 
 year = left_join(year, year_details, by="API")
 
@@ -208,13 +210,11 @@ year = year%>%
          dpth_mvd_num = replace(dpth_mvd_num, dpth_mvd_num=="99999", NA),
          dpth_tvd_num = as.numeric(dpth_tgt_num),
          dpth_mvd_num = as.numeric(dpth_mvd_num),
-         depth = coalesce(dpth_mvd_num,dpth_tvd_num),
-         status = replace(status, status=="J", "S"))                   ### I really don't know what J is but in the panel it looks like the vast majority of these wells are not producing
+         depth = coalesce(dpth_mvd_num,dpth_tvd_num))                
 meandepth = mean(year$depth, na.rm=T)
 year = year%>%
   mutate(depth = replace(depth, depth==0, meandepth),
          individual_bond = 25000 + 2*depth,
-         temp_abandoned_flag = status%in%c("T", "E"),
          plug_cost = depth*12)
 
 
@@ -223,11 +223,11 @@ year = year%>%
 ################################
 ## Calculate Plug costs, collapse by operator
 operator_summary = year%>%
-  group_by(ogrid_cde, temp_abandoned_flag)%>%
+  group_by(ogrid_cde, inactive_flag)%>%
   summarise(n_wells = n(),
             plug_cost = sum(plug_cost,na.rm=T),
             sum_individual_bonds = sum(individual_bond,na.rm=T))
-operator_summary = pivot_wider(operator_summary, id_cols="ogrid_cde", values_from = c("n_wells", "plug_cost", "sum_individual_bonds"), names_from="temp_abandoned_flag", values_fill = 0)  
+operator_summary = pivot_wider(operator_summary, id_cols="ogrid_cde", values_from = c("n_wells", "plug_cost", "sum_individual_bonds"), names_from="inactive_flag", values_fill = 0)  
 
 operator_summary = operator_summary%>%
   mutate(active_bond = 0,
@@ -314,6 +314,22 @@ ggsave(filename=paste(codedirectory,"Figures/CurrentBond_v_Costs.jpg", sep=""),
        height=5,
        width=7)
 
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond, y=total_plugcost))+
+  geom_abline(slope=1, intercept=0)+
+  #ggtitle("Business as usual bonds are far lower than plugging liabilities")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Wells")+
+  xlab("Current Bond Amounts")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds. \n A line is plotted at y=x. Plugging costs assume each well costs $12 per foot to plug.")+
+  theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/CurrentBond_v_Costs_nolegend.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
 
 ggplot(data=operator_summary)+
   geom_point(aes(x=bond_2, y=total_plugcost, color=n_temp_abandon_group))+
@@ -328,6 +344,23 @@ ggplot(data=operator_summary)+
 
 
 ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_Costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond_2, y=total_plugcost))+
+  geom_abline(slope=1, intercept=0)+
+  #ggtitle("Bonds are still insufficient with triple/double scheme")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Wells")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities against required bonds \n assuming active blankets triple and TA blankets double. A line is plotted at y=x. \n Plugging costs assume each well costs $12 per foot to plug.")+
+  xlab("New Bond Amounts")+
+  theme_bw()
+
+
+ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_Costs_nolegend.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -351,6 +384,22 @@ ggplot(data=operator_summary)+
   theme_bw()
 
 ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_MarginalCosts.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond_2, y=plug_cost_lowprod))+
+  geom_abline(slope=1, intercept=0)+
+  #ggtitle("Triple/double scheme doesn't look like enough to cover \n even only fee/state wells that produce  <2BOE per day.")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities for marginal wells against required bonds \n assuming active blankets triple and TA blankets double. A line is plotted at y=x. \n Plugging costs assume each well costs $12 per foot to plug.")+
+  xlab("New Bond Amounts")+
+  theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_MarginalCosts_nolegend.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -467,5 +516,34 @@ ggsave(filename=paste(codedirectory,"Figures/Histogram_nonTA_100.jpg", sep=""),
        height=5,
        width=7)
 
+
+ggplot(data=operator_summary)+
+  geom_histogram(aes(x=plug_cost_lowprod))+
+  xlab("Cost")+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram firm-level plugging costs for low production wells")+
+  labs(caption="Low production defined as less than 2BOE per day.  \n Vertical line drawn at $15m.")+
+  geom_vline(xintercept = 15000000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_lowprod_costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+
+ggplot(data=operator_summary)+
+  geom_histogram(aes(x=total_plugcost))+
+  xlab("Cost")+
+  scale_x_continuous(label=dollar)+
+  ggtitle("Histogram firm-level plugging costs for all fee/state wells")+
+  labs(caption=" Vertical line drawn at $15m.")+
+  geom_vline(xintercept = 15000000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_costs.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
 write.csv(panel, "DataOutput/panel.csv")
+
 
