@@ -210,7 +210,7 @@ year = year%>%
          dpth_mvd_num = replace(dpth_mvd_num, dpth_mvd_num=="99999", NA),
          dpth_tvd_num = as.numeric(dpth_tgt_num),
          dpth_mvd_num = as.numeric(dpth_mvd_num),
-         depth = coalesce(dpth_mvd_num,dpth_tvd_num))                
+         depth = coalesce(dpth_tvd_num,dpth_mvd_num))                
 meandepth = mean(year$depth, na.rm=T)
 year = year%>%
   mutate(depth = replace(depth, depth==0, meandepth),
@@ -545,5 +545,5 @@ ggsave(filename=paste(codedirectory,"Figures/Histogram_costs.jpg", sep=""),
        width=7)
 
 write.csv(panel, "DataOutput/panel.csv")
-
+write.csv(operator_summary, paste(codedirectory, "operator_summary.csv"))
 
