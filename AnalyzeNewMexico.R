@@ -369,9 +369,13 @@ ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_Costs_nolegend.j
 lowprod_plugcosts = year%>%
   filter(BOE<365*2)%>%
   group_by(ogrid_cde)%>%
-  summarise(plug_cost_lowprod = sum(plug_cost,na.rm=T))
+  summarise(plug_cost_lowprod = sum(plug_cost,na.rm=T),
+            n_lowprod_feestate = n())
 
 operator_summary = left_join(operator_summary, lowprod_plugcosts, by="ogrid_cde")
+operator_summary = operator_summary%>%
+  mutate(n_lowprod_feestate = replace(n_lowprod_feestate, is.na(n_lowprod_feestate),0),
+         plug_cost_lowprod = replace(plug_cost_lowprod, is.na(plug_cost_lowprod), 0))
 ggplot(data=operator_summary)+
   geom_point(aes(x=bond_2, y=plug_cost_lowprod, color=n_temp_abandon_group))+
   geom_abline(slope=1, intercept=0)+
@@ -545,5 +549,27 @@ ggsave(filename=paste(codedirectory,"Figures/Histogram_costs.jpg", sep=""),
        width=7)
 
 write.csv(panel, "DataOutput/panel.csv")
+
+operators = read.csv("OCD_Converted/ogrid.csv", colClasses = )
+operators = operators[,c(1,2,17,18)]
+names(operators)= c("ogrid_cde", "ogrid_name", "ogrid_create_dte", "ogrid_stat_cde")
+
+operator_summary=left_join(operator_summary%>%mutate(ogrid_cde=as.numeric(ogrid_cde)), operators, by="ogrid_cde")
+operator_summary=operator_summary%>%
+  rename(n_active_feestate=n_wells_FALSE,
+         n_inactive_feestate=n_wells_TRUE,
+         tot_plugcost_active_feestate = plug_cost_FALSE,
+         tot_plugcost_inactive_feestate = plug_cost_TRUE,
+         sum_individual_bonds_inactive = sum_individual_bonds_TRUE,
+         sum_individual_bonds_active = sum_individual_bonds_FALSE,
+         inactive_bond=temp_abandon_bond)%>%
+  arrange(ogrid_name)
+
+operator_summary=operator_summary%>%
+  select(ogrid_name, ogrid_cde, n_active_feestate, n_inactive_feestate, n_lowprod_feestate, tot_plugcost_active_feestate, tot_plugcost_inactive_feestate, total_plugcost, plug_cost_lowprod)
+
 write.csv(operator_summary, paste(codedirectory, "operator_summary.csv"))
 
+potential_liability = operator_summary$total_plugcost-15000000
+potential_liability = pmax(0, potential_liability)
+print(paste("Potential liability if cap is at 15m is: ", sum(potential_liability)))
