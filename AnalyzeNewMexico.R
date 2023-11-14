@@ -99,10 +99,12 @@ panel = expand.grid(unique(wellhistory$API), seq.Date(as.Date("2018-01-01"), as.
 names(panel) = c("API", "date")
 panel = left_join(panel, wellhistory, by="API")
 
+length(unique(panel$API))
 #throw out rows where date is outside effective range in wellhistory
 panel = panel%>%
   filter(date<rec_termn_dte,
          date>=eff_dte)
+length(unique(panel$API))
 
 gc()
 
@@ -263,7 +265,9 @@ operator_summary = operator_summary%>%
 operator_summary = operator_summary%>%
   mutate(active_triple = active_bond*3,
          temp_abandon_bond_double = temp_abandon_bond*2,
-         bond_2 = pmin(active_triple, sum_individual_bonds_FALSE)+pmin(temp_abandon_bond_double, sum_individual_bonds_TRUE))
+         bond_2 = pmin(active_triple, sum_individual_bonds_FALSE)+pmin(temp_abandon_bond_double, sum_individual_bonds_TRUE),
+         sum_wells_feestate = n_wells_FALSE+n_wells_TRUE,
+         sum_wells_100000 = sum_wells_feestate*100000)
 
 ####
 #
@@ -566,7 +570,7 @@ operator_summary=operator_summary%>%
   arrange(ogrid_name)
 
 operator_summary=operator_summary%>%
-  select(ogrid_name, ogrid_cde, n_active_feestate, n_inactive_feestate, n_lowprod_feestate, tot_plugcost_active_feestate, tot_plugcost_inactive_feestate, total_plugcost, plug_cost_lowprod)
+  select(ogrid_name, ogrid_cde, n_active_feestate, n_inactive_feestate, n_lowprod_feestate, sum_wells_feestate, sum_wells_100000, tot_plugcost_active_feestate, tot_plugcost_inactive_feestate, total_plugcost, plug_cost_lowprod)
 
 write.csv(operator_summary, paste(codedirectory, "operator_summary.csv"))
 
