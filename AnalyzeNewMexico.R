@@ -413,6 +413,23 @@ ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_MarginalCosts_no
        width=7)
 
 
+ggplot(data=operator_summary)+
+  geom_point(aes(x=bond, y=plug_cost_lowprod))+
+  geom_abline(slope=1, intercept=0)+
+  #ggtitle("Triple/double scheme doesn't look like enough to cover \n even only fee/state wells that produce  <2BOE per day.")+
+  scale_x_continuous(label=dollar)+
+  scale_y_continuous(label=dollar)+
+  ylab("Total Plugging Liabilities for Fee/State Marginal Wells")+
+  labs(caption="Plot of firm-level total estimated plugging liabilities for marginal wells against required bonds. \n A line is plotted at y=x. \n Plugging costs assume each well costs $12 per foot to plug.")+
+  xlab("Current Bond Amounts")+
+  theme_bw()
+
+ggsave(filename=paste(codedirectory,"Figures/Current_v_MarginalCosts_nolegend.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+
 ##################
 ## Histogramms ###
 ##################
