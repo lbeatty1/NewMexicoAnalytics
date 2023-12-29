@@ -10,6 +10,7 @@ library(lubridate)
 library(data.table)
 library(ggplot2)
 library(scales)
+library(sf)
 
 `EDFblue`     = "#0033CC"
 `EDFlightgreen`     = "#A1E214"
@@ -97,6 +98,7 @@ wellhistory[year(plug_dte)==9999, plug_dte:=NA]
 wellhistory[,eff_dte:=as.Date(eff_dte, "%m/%d/%Y")]
 wellhistory[,rec_termn_dte:=as.Date(rec_termn_dte, "%m/%d/%Y")]
 
+
 ###############
 ## Create a panel -- need at least 10GB memory available (probably more lol)
 panel = expand.grid(unique(wellhistory$API), seq.Date(as.Date("2018-01-01"), as.Date("2022-12-01"), by="month"))
@@ -121,7 +123,7 @@ panel = left_join(panel, production, by=c("API", "date"))
 nrow(panel)
 
 #lets throw out some stuff
-panel = panel[,c(1,2,6,7,8,9,13,14,19,20,32,33,34,38,39,40,41,43,44)]
+panel = panel[,c(1,2,4,6,7,8,9,13,14,19,20,32,33,34,38,39,40,41,43,44)]
 rm(production, tempdata, gasprod, oilprod)
 gc()
 
@@ -183,10 +185,9 @@ year_details = panel%>%
          date>=as.Date("2021-01-01"))%>%
   group_by(API)%>%
   slice_max(n=1, order_by=date)%>%
-  select(API, eff_dte, rec_termn_dte, ogrid_cde, well_typ_cde, lease_typ_cde, latitude, longitude, status, spud_dte, plug_dte, dpth_tgt_num, dpth_tvd_num, dpth_mvd_num, inactive_flag, time_shutin)
+  select(API, api_cnty_cde, eff_dte, rec_termn_dte, ogrid_cde, well_typ_cde, lease_typ_cde, latitude, longitude, status, spud_dte, plug_dte, dpth_tgt_num, dpth_tvd_num, dpth_mvd_num, inactive_flag, time_shutin)
 
 year = left_join(year, year_details, by="API")
-
 ###############################
 ####### see what we're missing#
 ###############################
@@ -389,7 +390,10 @@ ggplot(data=operator_summary)+
   labs(caption="Sum of state liability by firm.  THis is calculated as total plugging cost minus current bond amount.")+
   theme_bw()
 
-
+ggsave(filename=paste(codedirectory,"Figures/Histogram_CurrentLiabilities.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
 
 #############################
 ## Costs for low production wells
@@ -628,11 +632,179 @@ operator_summary=operator_summary%>%
          inactive_bond=temp_abandon_bond)%>%
   arrange(ogrid_name)
 
-operator_summary=operator_summary%>%
-  select(ogrid_name, ogrid_cde, n_active_feestate, n_inactive_feestate, n_lowprod_feestate, sum_wells_feestate, sum_wells_100000, tot_plugcost_active_feestate, tot_plugcost_inactive_feestate, total_plugcost, plug_cost_lowprod)
-
-write.csv(operator_summary, paste(codedirectory, "operator_summary.csv"))
+write.csv(operator_summary%>%select(ogrid_name, ogrid_cde, n_active_feestate, n_inactive_feestate, n_lowprod_feestate, sum_wells_feestate, sum_wells_100000, tot_plugcost_active_feestate, tot_plugcost_inactive_feestate, total_plugcost, plug_cost_lowprod), paste(codedirectory, "operator_summary.csv"))
 
 potential_liability = operator_summary$total_plugcost-10000000
 potential_liability = pmax(0, potential_liability)
-print(paste("Potential liability if cap is at 15m is: ", sum(potential_liability)))
+print(paste("Potential liability if cap is at 10m is: ", sum(potential_liability)))
+
+
+###################################
+## Make Maps of total liability ###
+###################################
+#suppose an operator has $10mil liability and posted a $1mil bond
+#they on 100 wells.
+#I'll distribute the remaining $9mil in liability based on that well's share of total plugging costs
+
+operator_summary = operator_summary%>%
+  mutate(bond_per_well = bond/sum_wells_feestate,
+         inactive_bond_per_well = bond/n_inactive_feestate)
+
+operator_summary=operator_summary%>%
+  mutate(state_liability=pmax(state_liability,0),
+         state_liability_new = total_plugcost - 10000000,
+         state_liability_new = pmax(state_liability_new, 0),
+         state_liability_inactive = tot_plugcost_inactive_feestate-bond,
+         state_liability_inactive = pmax(state_liability_inactive, 0),
+         state_liability_inactive_new = pmax(tot_plugcost_inactive_feestate-10000000,0))
+
+operator_summary = operator_summary%>%
+  select(ogrid_cde, state_liability, state_liability_new, state_liability_inactive, state_liability_inactive_new, sum_wells_feestate, n_inactive_feestate, total_plugcost, tot_plugcost_inactive_feestate)
+
+year$ogrid_cde=as.numeric(year$ogrid_cde)
+year=left_join(year, operator_summary, by='ogrid_cde')
+
+year = year%>%
+  mutate(plugcost_share_allwells = plug_cost/total_plugcost,
+         plugcost_share_inactive = (plug_cost/tot_plugcost_inactive_feestate)*inactive_flag,
+         well_liability_all = state_liability*plugcost_share_allwells,
+         well_liability_inactive = state_liability_inactive*plugcost_share_inactive,
+         well_liability_new = state_liability_new*plugcost_share_allwells,
+         well_liability_inactive_new=state_liability_inactive_new*plugcost_share_inactive)
+
+
+
+counties = st_read('cb_2018_us_county_500k/cb_2018_us_county_500k.shp')
+counties = counties%>%filter(STATEFP=="35")
+
+county_liabilities = year%>%
+  group_by(api_cnty_cde)%>%
+  summarise(well_liability_all = sum(well_liability_all,na.rm=T),
+            well_liability_inactive = sum(well_liability_inactive,na.rm=T),
+            well_liability_new = sum(well_liability_new,na.rm=T),
+            well_liability_inactive_new = sum(well_liability_inactive_new,na.rm=T))
+
+counties=left_join(counties, county_liabilities, by=c('COUNTYFP'='api_cnty_cde'))
+counties = counties%>%
+  mutate(liability_all_label = well_liability_all/1000000,
+         liability_all_label = round(liability_all_label),
+         liability_all_label = paste("$", liability_all_label, "m", sep=""),
+         liability_all_label = replace(liability_all_label, liability_all_label=="$NAm", NA),
+         liability_all_label = replace(liability_all_label, liability_all_label=="$0m", NA))
+
+
+counties = counties%>%
+  mutate(liability_inactive_label = well_liability_inactive/1000000,
+         liability_inactive_label = round(liability_inactive_label),
+         liability_inactive_label = paste("$", liability_inactive_label, "m", sep=""),
+         liability_inactive_label = replace(liability_inactive_label, liability_inactive_label=="$NAm", NA),
+         liability_inactive_label = replace(liability_inactive_label, liability_inactive_label=="$0m", NA))
+
+
+counties = counties%>%
+  mutate(liability_new_label = well_liability_new/1000000,
+         liability_new_label = round(liability_new_label),
+         liability_new_label = paste("$", liability_new_label, "m", sep=""),
+         liability_new_label = replace(liability_new_label, liability_new_label=="$NAm", NA),
+         liability_new_label = replace(liability_new_label, liability_new_label=="$0m", NA))
+
+
+counties = counties%>%
+  mutate(liability_new_inactive_label = well_liability_inactive_new/1000000,
+         liability_new_inactive_label = round(liability_new_inactive_label),
+         liability_new_inactive_label = paste("$", liability_new_inactive_label, "m", sep=""),
+         liability_new_inactive_label = replace(liability_new_inactive_label, liability_new_inactive_label=="$NAm", NA),
+         liability_new_inactive_label = replace(liability_new_inactive_label, liability_new_inactive_label=="$0m", NA))
+
+
+scale_dictionary = c("allwells" = max(counties$well_liability_all,na.rm=T), "inactivewells" = max(counties$well_liability_inactive,na.rm=T))
+######## All liabilities
+ggplot(counties)+
+  geom_sf(aes(fill=well_liability_all))+
+  geom_sf_text(aes(label=liability_all_label))+
+  scale_fill_gradient(low="#faf0f0",high="#a80808", na.value="#faf0f0",space ="Lab", limits = c(0, scale_dictionary['allwells']))+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  ggtitle("Uncovered Plugging Liabilities for All Fee/State Wells")
+
+ggsave(filename=paste(codedirectory,"Figures/All_PluggingLiabilities_County.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+
+## Inactive Liabilities
+ggplot(counties)+
+  geom_sf(aes(fill=well_liability_inactive))+
+  geom_sf_text(aes(label=liability_inactive_label))+
+  scale_fill_gradient(low="#faf0f0",
+                      high="#a80808", 
+                      na.value="#faf0f0",
+                      space ="Lab",
+                      limits = c(0,scale_dictionary['inactivewells']))+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  ggtitle("Uncovered Plugging Liabilities for Inactive Fee/State Wells")
+
+ggsave(filename=paste(codedirectory,"Figures/Inactive_PluggingLiabilities_County.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+## New bond all wells
+ggplot(counties)+
+  geom_sf(aes(fill=well_liability_new))+
+  geom_sf_text(aes(label=liability_new_label))+
+  scale_fill_gradient(low="#faf0f0",
+                      high="#a80808", 
+                      na.value="#faf0f0",
+                      space ="Lab", 
+                      limits=c(0, scale_dictionary['allwells']) )+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  ggtitle("Uncovered Plugging Liabilities for All Fee/State \nWells Under New Cap")
+
+
+ggsave(filename=paste(codedirectory,"Figures/New_PluggingLiabilities_County.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+##New bond inactive liability
+ggplot(counties)+
+  geom_sf(aes(fill=well_liability_inactive_new))+
+  geom_sf_text(aes(label=liability_new_inactive_label))+
+  scale_fill_gradient(low="#faf0f0",
+                      high="#a80808", 
+                      na.value="#faf0f0",
+                      space ="Lab" ,
+                      limits = c(0,scale_dictionary['inactivewells']))+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  ggtitle("Uncovered Plugging Liabilities for Inactive Fee/State \nWells Under New Cap")
+
+
+ggsave(filename=paste(codedirectory,"Figures/New_Inactive_PluggingLiabilities_County.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
