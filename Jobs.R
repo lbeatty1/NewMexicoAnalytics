@@ -133,6 +133,22 @@ panel[,producing_flag:= BOE>0]
 #there's about 500,000 rows with no reported production... let's assign producing_flag=0 to those observations
 panel[is.na(BOE), producing_flag:=0]
 
+#get BOE last 12
+panel[is.na(BOE), BOE:=0]
+panel[order(API,date),BOE_last_12:=BOE
+      +shift(BOE, n=1, type="lag")
+      +shift(BOE, n=2, type="lag")
+      +shift(BOE, n=3, type="lag")
+      +shift(BOE, n=4, type="lag")
+      +shift(BOE, n=5, type="lag")
+      +shift(BOE, n=6, type="lag")
+      +shift(BOE, n=7, type="lag")
+      +shift(BOE, n=8, type="lag")
+      +shift(BOE, n=9, type="lag")
+      +shift(BOE, n=10, type="lag")
+      +shift(BOE, n=11, type="lag")]
+panel[,BOEperday:=BOE_last_12/365]
+
 
 
 #counter of producing/nonproducing time
@@ -243,3 +259,125 @@ ggsave(filename=paste(codedirectory,"Figures/Jobs_AllWells.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
+
+
+
+#### Do for all wells with less than 2BOE per day
+
+#find total plug cost, n wells inactive for more than 15 months by county
+plug_snapshot = snapshot%>%
+  filter(BOEperday<2,
+         lease_typ_cde%in%c("P", "S"))%>%
+  group_by(county)%>%
+  summarise(plug_cost=sum(plug_cost),
+            n=n())%>%
+  mutate(plug_cost2 = n*100000,
+         jobs = (n/10)*2.4,
+         jobs = round(jobs, digits=0), 
+         jobs = replace(jobs, jobs==0, NA))
+
+#group by county, sum wells, costs
+
+counties = st_read('cb_2018_us_county_500k/cb_2018_us_county_500k.shp')
+counties = counties%>%filter(STATEFP=="35")
+
+counties=left_join(counties, plug_snapshot, by=c('COUNTYFP'='county'))
+counties=counties%>%
+  mutate(n=replace(n, is.na(n),0),
+         plug_cost=replace(plug_cost, is.na(plug_cost),0))
+
+ggplot(counties)+
+  geom_sf(aes(fill=jobs))+
+  geom_sf_text(aes(label=jobs))+
+  scale_fill_gradient(low="#EDF8FA",high="#216C2B", na.value="#EDF8FA",space ="Lab" )+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())
+
+ggsave(filename=paste(codedirectory,"Figures/Jobs_FeeState_2BOEperday.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+#re-do for all state wells
+plug_snapshot = snapshot%>%
+  filter(BOEperday<2)%>%
+  group_by(county)%>%
+  summarise(plug_cost=sum(plug_cost),
+            n=n())%>%
+  mutate(plug_cost2 = n*100000,
+         jobs = (n/10)*2.4, 
+         jobs = round(jobs, digits=0), 
+         jobs = replace(jobs, jobs==0, NA))
+
+counties = st_read('cb_2018_us_county_500k/cb_2018_us_county_500k.shp')
+counties = counties%>%filter(STATEFP=="35")
+
+
+counties=left_join(counties, plug_snapshot, by=c('COUNTYFP'='county'))
+counties=counties%>%
+  mutate(n=replace(n, is.na(n),0),
+         plug_cost=replace(plug_cost, is.na(plug_cost),0))
+
+ggplot(counties)+
+  geom_sf(aes(fill=jobs))+
+  geom_sf_text(aes(label=jobs))+
+  scale_fill_gradient(low="#EDF8FA",high="#216C2B", na.value="#EDF8FA",space ="Lab" )+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())
+
+ggsave(filename=paste(codedirectory,"Figures/Jobs_AllWells_2BOEperday.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+#Lastly, re-do for all state wells
+
+#find total plug cost, n wells inactive for more than 15 months by county
+plug_snapshot = snapshot%>%
+  group_by(county)%>%
+  summarise(plug_cost=sum(plug_cost),
+            n=n())%>%
+  mutate(plug_cost2 = n*100000,
+         jobs = (n/10)*2.4,
+         jobs = round(jobs, digits=0), 
+         jobs = replace(jobs, jobs==0, NA))
+
+#group by county, sum wells, costs
+
+counties = st_read('cb_2018_us_county_500k/cb_2018_us_county_500k.shp')
+counties = counties%>%filter(STATEFP=="35")
+
+counties=left_join(counties, plug_snapshot, by=c('COUNTYFP'='county'))
+counties=counties%>%
+  mutate(n=replace(n, is.na(n),0),
+         plug_cost=replace(plug_cost, is.na(plug_cost),0))
+
+ggplot(counties)+
+  geom_sf(aes(fill=jobs))+
+  geom_sf_text(aes(label=jobs))+
+  scale_fill_gradient(low="#EDF8FA",high="#216C2B", na.value="#EDF8FA",space ="Lab" )+
+  labs(caption="Jobs created from plugging every existing well in the state.")+
+  theme(legend.position = "none",
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank())
+
+ggsave(filename=paste(codedirectory,"Figures/Jobs_EveryWell.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+

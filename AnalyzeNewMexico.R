@@ -11,6 +11,10 @@ library(data.table)
 library(ggplot2)
 library(scales)
 
+`EDFblue`     = "#0033CC"
+`EDFlightgreen`     = "#A1E214"
+`EDFgreen` = "#009933"
+`EDFcyan`    = "#33CCFF"
 
 #Wellhistory is from a csv conversion from the FTP server
 wellhistory=fread("OCD_Converted/wellhistory.csv", colClasses = "character")
@@ -368,6 +372,25 @@ ggsave(filename=paste(codedirectory,"Figures/TripleDoubleBond_v_Costs_nolegend.j
        device="jpg",
        height=5,
        width=7)
+
+
+####
+# State-liabilities
+#Plugging cost - bond for fee/state wells
+operator_summary = operator_summary%>%
+  mutate(state_liability = total_plugcost-bond)
+ggplot(data=operator_summary)+
+  geom_histogram(aes(x=state_liability))+
+  scale_x_continuous(label=dollar,
+                     limits = c(0,50000000))+
+  scale_y_continuous(limits=c(0,75))+
+  xlab("Current liability for the state by firm")+
+  #ggtitle("Histogram of hypothetical individual well bonds owed for TA wells \n for firms ")+
+  labs(caption="Sum of state liability by firm.  THis is calculated as total plugging cost minus current bond amount.")+
+  theme_bw()
+
+
+
 #############################
 ## Costs for low production wells
 lowprod_plugcosts = year%>%
@@ -556,15 +579,34 @@ ggsave(filename=paste(codedirectory,"Figures/Histogram_lowprod_costs.jpg", sep="
        width=7)
 
 
+histbreak=1000000
 ggplot(data=operator_summary)+
-  geom_histogram(aes(x=total_plugcost))+
+  geom_histogram(aes(x=total_plugcost), breaks=seq(0,150000000, by=histbreak))+
+  geom_histogram(data=operator_summary%>%filter(total_plugcost>=10000000), aes(x=total_plugcost), fill="red",breaks=seq(0,150000000, by=histbreak))+
   xlab("Cost")+
-  scale_x_continuous(label=dollar)+
+  scale_x_continuous(label=dollar,
+                     limits=c(0,50000000))+
   ggtitle("Histogram firm-level plugging costs for all fee/state wells")+
-  labs(caption=" Vertical line drawn at $15m.")+
-  geom_vline(xintercept = 15000000)+
+  labs(caption=" Vertical line drawn at $10m.  All firms colored red cannot be covered by a $10mil cap.")+
+  geom_vline(xintercept = 10000000)+
   theme_bw()
-ggsave(filename=paste(codedirectory,"Figures/Histogram_costs.jpg", sep=""),
+ggsave(filename=paste(codedirectory,"Figures/Histogram_costs_10mcap.jpg", sep=""),
+       device="jpg",
+       height=5,
+       width=7)
+
+histbreak=1250000
+ggplot(data=operator_summary)+
+  geom_histogram(aes(x=total_plugcost), breaks=seq(0,150000000, by=histbreak))+
+  geom_histogram(data=operator_summary%>%filter(total_plugcost>=1250000), aes(x=total_plugcost), fill="red",breaks=seq(0,150000000, by=histbreak))+
+  xlab("Cost")+
+  scale_x_continuous(label=dollar,
+                     limits=c(0,50000000))+
+  ggtitle("Histogram firm-level plugging costs for all fee/state wells")+
+  labs(caption=" Vertical line drawn at $1.25m, the current cap.  \n All firms colored red have total plugging liabilities that exceed the current cap.")+
+  geom_vline(xintercept = 1250000)+
+  theme_bw()
+ggsave(filename=paste(codedirectory,"Figures/Histogram_costs_currentcap.jpg", sep=""),
        device="jpg",
        height=5,
        width=7)
@@ -591,6 +633,6 @@ operator_summary=operator_summary%>%
 
 write.csv(operator_summary, paste(codedirectory, "operator_summary.csv"))
 
-potential_liability = operator_summary$total_plugcost-15000000
+potential_liability = operator_summary$total_plugcost-10000000
 potential_liability = pmax(0, potential_liability)
 print(paste("Potential liability if cap is at 15m is: ", sum(potential_liability)))
